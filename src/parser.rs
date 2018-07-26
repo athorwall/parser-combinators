@@ -1,12 +1,10 @@
 use std::clone::Clone;
 
-type ParseFunc<T, U> = Fn(&Vec<T>) -> Vec<(U, Vec<T>)>;
-
-struct Parser<T, U> {
-    f: Box<ParseFunc<T, U>>,
+struct Parser<'a, T, U> {
+    f: Box<Fn(&Vec<T>) -> Vec<(U, Vec<T>)> + 'a>,
 }
 
-impl <T, U> Parser<T, U> {
+impl <'a, T, U> Parser<'a, T, U> {
     pub fn parse(&self, input: Vec<T>) -> Result<U, String> {
         let mut results = (self.f)(&input);
         let head = results.pop();
@@ -23,14 +21,18 @@ impl <T, U> Parser<T, U> {
         }
     }
 
-    pub fn one(t: T) -> Parser<T, T> where T: Copy {
+    pub fn one(t: &'a T) -> Parser<'a, T, T> where T: Copy + PartialEq {
         Parser{
-            f: Box::from(|input: &Vec<T>| {
+            f: Box::from(move |input: &Vec<T>| {
                 match input.first() {
                     Some(value) => {
                         let mut new_input = input.clone();
                         let first = new_input.pop().unwrap();
-                        vec![(first, new_input)]
+                        if first == *t {
+                            vec![(first, new_input)]
+                        } else {
+                            vec![]
+                        }
                     },
                     None => {
                         vec![]
@@ -40,7 +42,8 @@ impl <T, U> Parser<T, U> {
         }
     }
 
-    pub fn or<V, W>(p1: &Parser<V, W>, p2: &Parser<V, W>) -> Parser<V, W> where V: Copy, W: Copy {
+    pub fn or<'b, V, W>(p1: &'b Parser<'b, V, W>, p2: &'b Parser<'b, V, W>) -> Parser<'b, V, W>
+        where V: Copy, W: Copy {
         // ???
         let cloned_p1 = p1.clone();
         let cloned_p2 = p2.clone();
@@ -52,7 +55,6 @@ impl <T, U> Parser<T, U> {
                 results
             })
         }
-
     }
 
 }
@@ -63,7 +65,7 @@ mod tests {
 
     #[test]
     fn test_one() {
-        let parser = Parser::<char, char>::one('a');
+        let parser = Parser::<char, char>::one(&'a');
         assert_eq!(parser.parse(vec!['a']), Result::Ok('a'));
         assert!(parser.parse(vec!['a', 'b']).is_err());
         assert!(parser.parse(vec![]).is_err());
@@ -71,10 +73,13 @@ mod tests {
 
     #[test]
     fn test_or() {
-        let parser_a = Parser::<char, char>::one('a');
-        let parser_b = Parser::<char, char>::one('b');
-        let parser = Parser::or(&parser_a, &parser_b);
+        let parser_a = Parser::<char, char>::one(&'a');
+        let parser_b = Parser::<char, char>::one(&'b');
+        let parser = Parser::<char, char>::or(&parser_a, &parser_b);
         assert_eq!(parser.parse(vec!['a']), Result::Ok('a'));
         assert_eq!(parser.parse(vec!['b']), Result::Ok('b'));
+        assert!(parser.parse(vec!['c']).is_err());
+        assert!(parser.parse(vec!['a', 'b']).is_err());
+        assert!(parser.parse(vec![]).is_err());
     }
 }
